@@ -1,0 +1,25 @@
+{
+  "name": "gtnh-version-extractor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hypeserv/gtnh-version-extractor.git"
+  },
+  "private": true,
+  "dependencies": {
+    "esbuild": "^0.27.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.30",
+    "typescript": "^5.6.3"
+  }
+}

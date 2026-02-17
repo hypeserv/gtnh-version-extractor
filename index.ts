@@ -20,7 +20,7 @@ async function fetchVersions(): Promise<AnyRecord> {
         );
     }
 
-    const versions = (await res.json()) as AnyRecord;
+    const versions = (await res.json())?.versions as AnyRecord;
     if (!versions || typeof versions !== "object") {
         throw new Error("Invalid versions.json format (expected object).");
     }
@@ -66,7 +66,7 @@ function extractServerUrls(versionsObj: AnyRecord, stable = false): string[] {
             server.java8,
         ].filter(
             (u): u is string =>
-                typeof u === "string" && u.includes("/ServerPacks/") && u.endsWith(".zip"),
+                typeof u === "string" /*&& u.includes("/ServerPacks/") */ && u.endsWith(".zip"),
         );
 
         urls.push(...candidates);
@@ -78,17 +78,38 @@ function extractServerUrls(versionsObj: AnyRecord, stable = false): string[] {
 async function main() {
     const app = express();
 
-    // logs
+    // Log request data to console
+    // Real IP + request logging middleware (Traefik / Cloudflare compatible)
     app.use((req: Request, res: Response, next: NextFunction) => {
         const start = Date.now();
 
+        function getRealIp(): string {
+            const cf = req.headers["cf-connecting-ip"];
+            if (typeof cf === "string" && cf.length > 0) return cf;
+
+            const xff = req.headers["x-forwarded-for"];
+            if (typeof xff === "string" && xff.length > 0) {
+                return xff.split(",")[0].trim(); // first = original client
+            }
+
+            const xri = req.headers["x-real-ip"];
+            if (typeof xri === "string" && xri.length > 0) return xri;
+
+            return req.socket.remoteAddress ?? "unknown";
+        }
+
+        const realIp = getRealIp();
+
         res.on("finish", () => {
             const duration = Date.now() - start;
-            console.log(`${new Date().toISOString()} ${req.ip} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+            console.log(
+                `${new Date().toISOString()} ${realIp} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`
+            );
         });
 
         next();
     });
+
 
     app.get("/", (_req: Request, res: Response) => {
         res.json("GTNH version extractor - ok");

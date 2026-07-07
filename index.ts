@@ -20,7 +20,8 @@ async function fetchVersions(): Promise<AnyRecord> {
         );
     }
 
-    const versions = (await res.json())?.versions as AnyRecord;
+    const versions = (await res.json()) as AnyRecord;
+
     if (!versions || typeof versions !== "object") {
         throw new Error("Invalid versions.json format (expected object).");
     }

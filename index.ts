@@ -38,10 +38,23 @@ async function getVersionsCached(): Promise<AnyRecord> {
     const now = Date.now();
     if (cachedVersions && now - cacheFetchedAt < CACHE_TTL_MS) return cachedVersions;
 
-    const versions = await fetchVersions();
-    cachedVersions = versions;
-    cacheFetchedAt = now;
-    return versions;
+    try {
+        const versions = await fetchVersions();
+        cachedVersions = versions;
+        cacheFetchedAt = now;
+        return versions;
+    } catch (e) {
+        // Upstream broke. Serve stale cache if we have one; only fail on cold cache.
+        if (cachedVersions) {
+            const ageMin = Math.round((now - cacheFetchedAt) / 60000);
+            logError("upstream fetch failed, serving stale cache", e);
+            console.warn(
+                `${new Date().toISOString()} WARN serving stale versions cache (age ${ageMin}m)`
+            );
+            return cachedVersions;
+        }
+        throw e;
+    }
 }
 
 function getVersionEntries(versionsObj: AnyRecord): Array<[string, AnyRecord]> {
@@ -107,11 +120,21 @@ async function main() {
 
         const realIp = getRealIp();
 
-        res.on("finish", () => {
+        function logLine() {
             const duration = Date.now() - start;
-            console.log(
-                `${new Date().toISOString()} ${realIp} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`
-            );
+            const line = `${new Date().toISOString()} ${realIp} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`;
+            if (res.statusCode >= 500) console.error(line);
+            else console.log(line);
+        }
+
+        // "finish" = response sent; "close" = client aborted before finish (would otherwise log nothing)
+        res.on("finish", logLine);
+        res.on("close", () => {
+            if (!res.writableEnded) {
+                console.error(
+                    `${new Date().toISOString()} ${realIp} ${req.method} ${req.originalUrl} ABORTED ${Date.now() - start}ms`
+                );
+            }
         });
 
         next();
@@ -149,6 +172,7 @@ async function main() {
             const serverfilesStable = extractServerUrls(versions, true);
             res.type("text/plain").send(serverfilesStable.join("\n") + "\n");
         } catch (e: any) {
+            logError("GET /serverfiles/stable", e);
             res.status(502).type("text/plain").send(`error: ${String(e?.message ?? e)}\n`);
         }
     });
@@ -157,11 +181,27 @@ async function main() {
         res.type("text/plain").send("ok\n");
     });
 
+    // Global error handler — catches anything a route's try/catch missed (must be last, 4 args)
+    app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+        logError(`${req.method} ${req.originalUrl}`, err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: "internal server error" });
+        }
+    });
+
     const port = process.env.PORT ? Number(process.env.PORT) : 3000;
     app.listen(port, () => console.log(`listening on :${port}`));
 }
 
+// Process-level safety net — log instead of dying silently
+process.on("unhandledRejection", (reason) => {
+    logError("unhandledRejection", reason);
+});
+process.on("uncaughtException", (err) => {
+    logError("uncaughtException", err);
+});
+
 main().catch((e) => {
-    console.error(e);
+    logError("startup", e);
     process.exit(1);
 });

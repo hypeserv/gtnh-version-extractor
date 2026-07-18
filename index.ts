@@ -5,6 +5,12 @@ const REMOTE_VERSIONS_JSON = "https://downloads.gtnewhorizons.com/versions.json"
 
 type AnyRecord = Record<string, any>;
 
+function logError(context: string, err: unknown): void {
+    const e = err as any;
+    const msg = String(e?.stack ?? e?.message ?? e);
+    console.error(`${new Date().toISOString()} ERROR [${context}] ${msg}`);
+}
+
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h
 
 let cachedVersions: AnyRecord | null = null;
@@ -121,6 +127,7 @@ async function main() {
             const versions = await getVersionsCached();
             res.json(versions);
         } catch (e: any) {
+            logError("GET /versions", e);
             res.status(502).json({ error: String(e?.message ?? e) });
         }
     });
@@ -131,6 +138,7 @@ async function main() {
             const serverfiles = extractServerUrls(versions, false);
             res.type("text/plain").send(serverfiles.join("\n") + "\n");
         } catch (e: any) {
+            logError("GET /serverfiles", e);
             res.status(502).type("text/plain").send(`error: ${String(e?.message ?? e)}\n`);
         }
     });
